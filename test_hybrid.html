@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebSocket 텍스트/바이너리 테스트</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .container {
+            margin: 20px 0;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        .log {
+            background-color: #f5f5f5;
+            padding: 10px;
+            border-radius: 3px;
+            height: 200px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 12px;
+        }
+        button {
+            padding: 10px 15px;
+            margin: 5px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+        }
+        button:disabled {
+            background-color: #6c757d;
+            cursor: not-allowed;
+        }
+        input, textarea {
+            width: 100%;
+            padding: 8px;
+            margin: 5px 0;
+            border: 1px solid #ddd;
+            border-radius: 3px;
+        }
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 3px;
+        }
+        .status.connected {
+            background-color: #d4edda;
+            color: #155724;
+        }
+        .status.disconnected {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+    </style>
+</head>
+<body>
+    <h1>🔌 WebSocket 텍스트/바이너리 데이터 테스트</h1>
+    
+    <div class="status" id="connectionStatus">연결되지 않음</div>
+    
+    <div class="container">
+        <h3>연결 관리</h3>
+        <button onclick="connectWebSocket()">WebSocket 연결</button>
+        <button onclick="disconnectWebSocket()">연결 해제</button>
+    </div>
+    
+    <div class="container">
+        <h3>1. JSON 텍스트 메시지 테스트</h3>
+        <textarea id="jsonMessage" rows="4" placeholder='{"type": "text", "message": "안녕하세요!"}'></textarea>
+        <button onclick="sendJsonMessage()">JSON 메시지 전송</button>
+    </div>
+    
+    <div class="container">
+        <h3>2. 일반 텍스트 메시지 테스트</h3>
+        <input type="text" id="plainText" placeholder="일반 텍스트 입력">
+        <button onclick="sendPlainText()">일반 텍스트 전송</button>
+    </div>
+    
+    <div class="container">
+        <h3>3. 바이너리 데이터 테스트</h3>
+        <input type="file" id="fileInput" accept="audio/*">
+        <button onclick="sendBinaryFile()">파일을 바이너리로 전송</button>
+        <button onclick="sendRandomBinary()">랜덤 바이너리 데이터 전송</button>
+    </div>
+    
+    <div class="container">
+        <h3>4. 음성 녹음 테스트 (브라우저 지원시)</h3>
+        <button onclick="startRecording()" id="recordBtn">🎤 녹음 시작</button>
+        <button onclick="stopRecording()" id="stopBtn" disabled>⏹️ 녹음 중지</button>
+        <select id="sendMode">
+            <option value="base64">Base64 (JSON)</option>
+            <option value="binary">바이너리</option>
+        </select>
+    </div>
+    
+    <div class="container">
+        <h3>📋 로그</h3>
+        <div class="log" id="logArea"></div>
+        <button onclick="clearLog()">로그 지우기</button>
+    </div>
+
+    <script>
+        let websocket = null;
+        let mediaRecorder = null;
+        let recordedChunks = [];
+
+        // 로그 함수
+        function log(message, type = 'info') {
+            const logArea = document.getElementById('logArea');
+            const timestamp = new Date().toLocaleTimeString();
+            const color = type === 'error' ? 'red' : type === 'sent' ? 'blue' : 'green';
+            logArea.innerHTML += `<div style="color: ${color}">[${timestamp}] ${message}</div>`;
+            logArea.scrollTop = logArea.scrollHeight;
+        }
+
+        function clearLog() {
+            document.getElementById('logArea').innerHTML = '';
+        }
+
+        // WebSocket 연결
+        function connectWebSocket() {
+            if (websocket && websocket.readyState === WebSocket.OPEN) {
+                log('이미 연결되어 있습니다.', 'error');
+                return;
+            }
+
+            websocket = new WebSocket('ws://localhost:8000/ws');
+
+            websocket.onopen = (event) => {
+                log('✅ WebSocket 연결 성공!');
+                updateConnectionStatus(true);
+            };
+
+            websocket.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    log(`📨 수신: ${JSON.stringify(data, null, 2)}`);
+                } catch (e) {
+                    log(`📨 수신 (원본): ${event.data}`);
+                }
+            };
+
+            websocket.onclose = (event) => {
+                log(`❌ WebSocket 연결 종료 (코드: ${event.code})`);
+                updateConnectionStatus(false);
+            };
+
+            websocket.onerror = (error) => {
+                log(`🚨 WebSocket 오류: ${error}`, 'error');
+                updateConnectionStatus(false);
+            };
+        }
+
+        function disconnectWebSocket() {
+            if (websocket) {
+                websocket.close();
+                websocket = null;
+            }
+        }
+
+        function updateConnectionStatus(connected) {
+            const status = document.getElementById('connectionStatus');
+            if (connected) {
+                status.textContent = '✅ 연결됨';
+                status.className = 'status connected';
+            } else {
+                status.textContent = '❌ 연결되지 않음';
+                status.className = 'status disconnected';
+            }
+        }
+
+        // JSON 메시지 전송
+        function sendJsonMessage() {
+            if (!websocket || websocket.readyState !== WebSocket.OPEN) {
+                log('WebSocket이 연결되지 않았습니다.', 'error');
+                return;
+            }
+
+            const message = document.getElementById('jsonMessage').value;
+            try {
+                JSON.parse(message); // 유효성 검사
+                websocket.send(message);
+                log(`📤 JSON 전송: ${message}`, 'sent');
+            } catch (e) {
+                log(`🚨 유효하지 않은 JSON: ${e.message}`, 'error');
+            }
+        }
+
+        // 일반 텍스트 전송
+        function sendPlainText() {
+            if (!websocket || websocket.readyState !== WebSocket.OPEN) {
+                log('WebSocket이 연결되지 않았습니다.', 'error');
+                return;
+            }
+
+            const text = document.getElementById('plainText').value;
+            websocket.send(text);
+            log(`📤 텍스트 전송: ${text}`, 'sent');
+        }
+
+        // 바이너리 파일 전송
+        function sendBinaryFile() {
+            if (!websocket || websocket.readyState !== WebSocket.OPEN) {
+                log('WebSocket이 연결되지 않았습니다.', 'error');
+                return;
+            }
+
+            const fileInput = document.getElementById('fileInput');
+            const file = fileInput.files[0];
+            
+            if (!file) {
+                log('파일을 선택해주세요.', 'error');
+                return;
+            }
+
+            file.arrayBuffer().then(buffer => {
+                websocket.send(buffer);
+                log(`📤 바이너리 파일 전송: ${file.name} (${buffer.byteLength} bytes)`, 'sent');
+            });
+        }
+
+        // 랜덤 바이너리 데이터 전송
+        function sendRandomBinary() {
+            if (!websocket || websocket.readyState !== WebSocket.OPEN) {
+                log('WebSocket이 연결되지 않았습니다.', 'error');
+                return;
+            }
+
+            const buffer = new ArrayBuffer(1024);
+            const view = new Uint8Array(buffer);
+            for (let i = 0; i < view.length; i++) {
+                view[i] = Math.floor(Math.random() * 256);
+            }
+
+            websocket.send(buffer);
+            log(`📤 랜덤 바이너리 전송: ${buffer.byteLength} bytes`, 'sent');
+        }
+
+        // 음성 녹음
+        async function startRecording() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                recordedChunks = [];
+
+                mediaRecorder = new MediaRecorder(stream, {
+                    mimeType: 'audio/webm;codecs=opus'
+                });
+
+                mediaRecorder.ondataavailable = (event) => {
+                    if (event.data.size > 0) {
+                        recordedChunks.push(event.data);
+                        
+                        // 실시간 전송 (선택된 모드에 따라)
+                        const sendMode = document.getElementById('sendMode').value;
+                        if (sendMode === 'binary') {
+                            sendAudioChunkAsBinary(event.data);
+                        } else {
+                            sendAudioChunkAsBase64(event.data);
+                        }
+                    }
+                };
+
+                mediaRecorder.start(100); // 100ms마다 청크 생성
+                
+                document.getElementById('recordBtn').disabled = true;
+                document.getElementById('stopBtn').disabled = false;
+                
+                log('🎤 녹음 시작');
+
+            } catch (error) {
+                log(`🚨 녹음 시작 실패: ${error.message}`, 'error');
+            }
+        }
+
+        function stopRecording() {
+            if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+                mediaRecorder.stop();
+                mediaRecorder.stream.getTracks().forEach(track => track.stop());
+                
+                document.getElementById('recordBtn').disabled = false;
+                document.getElementById('stopBtn').disabled = true;
+                
+                log('⏹️ 녹음 중지');
+            }
+        }
+
+        function sendAudioChunkAsBinary(audioBlob) {
+            if (!websocket || websocket.readyState !== WebSocket.OPEN) return;
+
+            audioBlob.arrayBuffer().then(buffer => {
+                websocket.send(buffer);
+                log(`📤 오디오 바이너리 청크: ${buffer.byteLength} bytes`, 'sent');
+            });
+        }
+
+        function sendAudioChunkAsBase64(audioBlob) {
+            if (!websocket || websocket.readyState !== WebSocket.OPEN) return;
+
+            const reader = new FileReader();
+            reader.onload = () => {
+                const base64Data = reader.result.split(',')[1];
+                const message = {
+                    type: "audio",
+                    subtype: "streaming",
+                    action: "chunk",
+                    audio_data: base64Data,
+                    format: "audio/webm"
+                };
+                websocket.send(JSON.stringify(message));
+                log(`📤 오디오 Base64 청크: ${base64Data.length} chars`, 'sent');
+            };
+            reader.readAsDataURL(audioBlob);
+        }
+
+        // 예시 JSON 메시지들
+        document.getElementById('jsonMessage').value = JSON.stringify({
+            type: "text",
+            message: "안녕하세요! 텍스트 메시지 테스트입니다."
+        }, null, 2);
+
+    </script>
+</body>
+</html>

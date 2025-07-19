@@ -1,0 +1,33 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: presentation-angel-backend
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env.docker  # Docker 전용 환경변수 파일 사용
+    environment:
+      - PYTHONPATH=/app
+      - DOCKER_CONTAINER=true  # Docker 환경 식별용
+    volumes:
+      # 개발 시 코드 변경을 실시간 반영 (선택사항)
+      - .:/app
+      # Google 서비스 계정 키 파일 마운트
+      - ./google-key.json:/app/google-key.json:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - presentation-angel-network
+
+networks:
+  presentation-angel-network:
+    driver: bridge

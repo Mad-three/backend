@@ -1,0 +1,4 @@
+__pycache__/
+google-key.json
+.env
+.env.docker

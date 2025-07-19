@@ -1,4 +1,4 @@
-version: '3.8'
+
 
 services:
   backend:
@@ -19,6 +19,8 @@ services:
       # Google 서비스 계정 키 파일 마운트
       - ./google-key.json:/app/google-key.json:ro
     restart: unless-stopped
+    depends_on:
+      - mysql
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
@@ -28,6 +30,22 @@ services:
     networks:
       - presentation-angel-network
 
+  mysql:
+    image: mysql:8.0
+    container_name: presentation-angel-mysql
+    restart: always
+    env_file:
+      - .env.docker
+    volumes:
+      - mysql-data:/var/lib/mysql
+    ports:
+      - "3306:3306" # For local development database access
+    networks:
+      - presentation-angel-network
+
 networks:
   presentation-angel-network:
     driver: bridge
+
+volumes:
+  mysql-data:

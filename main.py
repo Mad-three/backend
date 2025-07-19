@@ -23,11 +23,14 @@ from websocket_handlers import (
     send_error_message,
     cleanup_websocket_session,
 )
+from auth import router as auth_router
 
 # FastAPI 애플리케이션 인스턴스 생성
 # title: API 문서에 표시될 제목
 # version: API 버전
 app = FastAPI(title="PresentationAngel Backend", version="1.0.0")
+
+app.include_router(auth_router, prefix="/auth")
 
 # CORS(Cross-Origin Resource Sharing) 미들웨어 설정
 # 브라우저가 다른 도메인의 서버에 요청을 보낼 수 있도록 허용
